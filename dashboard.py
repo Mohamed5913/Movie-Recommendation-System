@@ -21,6 +21,9 @@ item_columns = ['movieId', 'title', 'release_date', 'video_release_date', 'IMDb_
                 'Musical', 'Mystery', 'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western']
 movies = pd.read_csv("ml-100k/u.item", sep='|', encoding='latin-1', names=item_columns)
 
+# Convert release_date to datetime
+movies['release_date'] = pd.to_datetime(movies['release_date'], errors='coerce')
+
 # Load genres and remove 'unknown'
 genre_df = pd.read_csv("ml-100k/u.genre", sep='|', names=['genre', 'genre_id'], encoding='latin-1')
 genres = genre_df['genre'].dropna().tolist()
@@ -62,7 +65,7 @@ user_similarity_df = compute_user_similarity()
 item_similarity_df = compute_item_similarity()
 svd_similarity_df = compute_svd_similarity()
 
-def get_top_n_recommendations(user_id, similarity_df, n=5, genre_filter=None):
+def get_top_n_recommendations(user_id, similarity_df, n=5, genre_filter=None, release_filter=None):
     sim_users = similarity_df[user_id].sort_values(ascending=False)[1:]
     user_ratings = user_movie_matrix.loc[user_id]
     weighted_ratings = pd.Series(dtype=float)
@@ -74,12 +77,16 @@ def get_top_n_recommendations(user_id, similarity_df, n=5, genre_filter=None):
                     weighted_ratings[movie_id] = 0
                 weighted_ratings[movie_id] += rating * sim_score
     recommendations = weighted_ratings.sort_values(ascending=False)
-    movie_info = movies[movies['movieId'].isin(recommendations.index)][['movieId', 'title', 'IMDb_URL']].copy()
+    movie_info = movies[movies['movieId'].isin(recommendations.index)][['movieId', 'title', 'IMDb_URL', 'release_date']].copy()
 
     if genre_filter:
         genre_cols = [g for g in genre_filter if g in movies.columns]
         genre_mask = movies.set_index('movieId').loc[movie_info['movieId']][genre_cols].sum(axis=1) > 0
         movie_info = movie_info[genre_mask.values]
+
+    if release_filter:
+        start_date, end_date = release_filter
+        movie_info = movie_info[(movie_info['release_date'] >= start_date) & (movie_info['release_date'] <= end_date)]
 
     return movie_info.head(n)
 
@@ -145,15 +152,18 @@ if st.button("Give Rating"):
 st.markdown("---")
 st.header("🎯 Get Movie Recommendations")
 genre_filter = st.multiselect("Select preferred genres (optional):", genres)
+release_start = st.date_input("Start Release Date (optional):", value=pd.to_datetime("1990-01-01"))
+release_end = st.date_input("End Release Date (optional):", value=pd.to_datetime("2000-12-31"))
+release_filter = (release_start, release_end) if release_start and release_end else None
 top_n = st.slider("Number of Recommendations:", 1, 20, 5)
 
 if st.button("Get Recommendations"):
     if model == "User-Based CF":
-        recs = get_top_n_recommendations(user_id, user_similarity_df, n=top_n, genre_filter=genre_filter)
+        recs = get_top_n_recommendations(user_id, user_similarity_df, n=top_n, genre_filter=genre_filter, release_filter=release_filter)
     elif model == "Item-Based CF":
-        recs = get_top_n_recommendations(user_id, item_similarity_df, n=top_n, genre_filter=genre_filter)
+        recs = get_top_n_recommendations(user_id, item_similarity_df, n=top_n, genre_filter=genre_filter, release_filter=release_filter)
     else:
-        recs = get_top_n_recommendations(user_id, svd_similarity_df, n=top_n, genre_filter=genre_filter)
+        recs = get_top_n_recommendations(user_id, svd_similarity_df, n=top_n, genre_filter=genre_filter, release_filter=release_filter)
 
     st.write(f"Top {top_n} recommendations for {all_user_names[user_id]}:")
 
