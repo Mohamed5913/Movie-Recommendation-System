@@ -1,4 +1,3 @@
-# Import required libraries
 import pandas as pd
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
@@ -11,7 +10,6 @@ from scipy.stats import pearsonr
 import warnings
 warnings.filterwarnings('ignore')
 
-# Set random seed for reproducibility
 np.random.seed(42)
 
 print("📊 MovieLens 100K Movie Recommendation System")
