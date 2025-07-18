@@ -83,6 +83,11 @@ if search_query:
 
 movie_titles = filtered_movies["title"].tolist()
 selected_movie = st.selectbox("Select a Movie to Rate", movie_titles)
+if selected_movie:
+    poster_url = get_movie_posters(selected_movie)
+    if poster_url:
+        st.image(poster_url, width=100)
+
 rating = st.slider("Your Rating", 1, 5, 3)
 if st.button("Give Rating"):
     movie_id = u_item[u_item["title"] == selected_movie]["movie_id"].values[0]
