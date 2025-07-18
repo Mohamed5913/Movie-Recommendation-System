@@ -11,9 +11,9 @@ import seaborn as sns
 
 # Load environment variables
 load_dotenv()
-OMDB_API_KEY = os.getenv("OMDB_API_KEY")
+OMDB_API_KEY = os.getenv("OMDB_API_KEY") or st.secrets.get("OMDB_API_KEY")
 if not OMDB_API_KEY:
-    st.error("OMDb API key not set. Please ensure .env file exists and contains a valid OMDB_API_KEY.")
+    st.error("OMDb API key not set. Please ensure it is configured in Streamlit Secrets or .env file.")
 
 # Load Data
 u_data = pd.read_csv("ml-100k/u.data", sep="\t", names=["user_id", "item_id", "rating", "timestamp"])
@@ -111,34 +111,49 @@ if st.button("Give Rating"):
 st.subheader("\U0001F3AF Get Movie Recommendations")
 num_recs = st.slider("Number of Recommendations", 5, 20, 10)
 if st.button("Recommend"):
-    cosine_sim = cosine_similarity(st.session_state.user_matrix)
-    sim_scores = cosine_sim[selected_user - 1]
+    seen_movies = st.session_state.user_matrix.loc[selected_user] > 0
 
-    sim_users = [(i + 1, score) for i, score in enumerate(sim_scores) if (i + 1) != selected_user]
-    sim_users = sorted(sim_users, key=lambda x: x[1], reverse=True)
+    if seen_movies.any():
+        cosine_sim = cosine_similarity(st.session_state.user_matrix)
+        sim_scores = cosine_sim[selected_user - 1]
 
-    if sim_users:
-        sim_user_ids, sim_weights = zip(*sim_users)
-        sim_user_ids = list(sim_user_ids)
-        sim_weights = np.array(sim_weights)
+        sim_users = [(i + 1, score) for i, score in enumerate(sim_scores) if (i + 1) != selected_user]
+        sim_users = sorted(sim_users, key=lambda x: x[1], reverse=True)
 
-        ratings_matrix = st.session_state.user_matrix.loc[sim_user_ids]
-        weighted_ratings = ratings_matrix.T.dot(sim_weights) / (np.sum(sim_weights) + 1e-8)
+        if sim_users:
+            sim_user_ids, sim_weights = zip(*sim_users)
+            sim_user_ids = list(sim_user_ids)
+            sim_weights = np.array(sim_weights)
 
-        seen_movies = st.session_state.user_matrix.loc[selected_user] > 0
-        recommendations = pd.Series(weighted_ratings, index=ratings_matrix.columns)
-        recommendations = recommendations[~seen_movies].sort_values(ascending=False).head(num_recs)
+            ratings_matrix = st.session_state.user_matrix.loc[sim_user_ids]
+            weighted_ratings = ratings_matrix.T.dot(sim_weights) / (np.sum(sim_weights) + 1e-8)
 
-        st.write("### Recommended Movies:")
-        for movie_id in recommendations.index:
+            recommendations = pd.Series(weighted_ratings, index=ratings_matrix.columns)
+            recommendations = recommendations[~seen_movies].sort_values(ascending=False).head(num_recs)
+
+            st.write("### Recommended Movies:")
+            for movie_id in recommendations.index:
+                title = u_item[u_item["movie_id"] == movie_id]["title"].values[0]
+                movie_data = get_movie_data(title)
+                poster_url = movie_data.get("Poster")
+                if poster_url:
+                    st.image(poster_url, width=100)
+                st.write(f"**{title}** - Predicted Rating: {recommendations[movie_id]:.2f}")
+        else:
+            st.warning("Not enough similar users to generate recommendations.")
+    else:
+        # General top-rated movies if no history
+        top_movies = u_data.groupby("item_id")["rating"].mean().sort_values(ascending=False)
+        top_unseen = top_movies[~seen_movies].head(num_recs)
+
+        st.write("### Recommended Popular Movies:")
+        for movie_id in top_unseen.index:
             title = u_item[u_item["movie_id"] == movie_id]["title"].values[0]
             movie_data = get_movie_data(title)
             poster_url = movie_data.get("Poster")
             if poster_url:
                 st.image(poster_url, width=100)
-            st.write(f"**{title}** - Predicted Rating: {recommendations[movie_id]:.2f}")
-    else:
-        st.warning("Not enough similar users to generate recommendations.")
+            st.write(f"**{title}** - Avg Rating: {top_unseen[movie_id]:.2f}")
 
 # --- Sidebar Data Exploration ---
 st.sidebar.title("\U0001F4CA Data Exploration")
