@@ -47,6 +47,21 @@ st.title("🎥 Movie Recommendation System")
 user_list = user_movie_matrix.index.tolist()
 selected_user = st.selectbox("👤 Select User ID", user_list)
 
+# --- User-Based Stats ---
+st.subheader("📈 Your Rating Behavior")
+user_ratings = user_movie_matrix.loc[selected_user]
+rated_movies = user_ratings[user_ratings > 0]
+
+st.markdown(f"**You have rated {len(rated_movies)} movies.**")
+st.markdown(f"**Average Rating: {rated_movies.mean():.2f}**")
+
+fig, ax = plt.subplots()
+sns.histplot(rated_movies, bins=5, kde=False, ax=ax)
+ax.set_title("Distribution of Your Ratings")
+ax.set_xlabel("Rating")
+ax.set_ylabel("Count")
+st.pyplot(fig)
+
 # --- Rate a Movie ---
 st.subheader("🎬 Rate a Movie")
 
@@ -103,17 +118,21 @@ if st.button("Recommend"):
     sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
     sim_users = [i[0] + 1 for i in sim_scores[1:]]
 
-    user_ratings = user_movie_matrix.loc[sim_users].mean().sort_values(ascending=False)
-    seen_movies = user_movie_matrix.loc[selected_user]
-    unseen_movies = user_ratings[seen_movies == 0].head(num_recs)
+    weighted_ratings = pd.Series(dtype=float)
+    for sim_user in sim_users:
+        similarity = cosine_sim[selected_user - 1][sim_user - 1]
+        weighted_ratings = weighted_ratings.add(user_movie_matrix.loc[sim_user] * similarity, fill_value=0)
+
+    seen = user_movie_matrix.loc[selected_user]
+    recommendations = weighted_ratings[seen == 0].sort_values(ascending=False).head(num_recs)
 
     st.write("### Recommended Movies:")
-    for movie_id in unseen_movies.index:
+    for movie_id in recommendations.index:
         title = u_item[u_item["movie_id"] == movie_id]["title"].values[0]
         poster_url = get_movie_posters(title)
         if poster_url:
             st.image(poster_url, width=100)
-        st.write(f"**{title}** - Predicted Rating: {unseen_movies[movie_id]:.2f}")
+        st.write(f"**{title}** - Predicted Score: {recommendations[movie_id]:.2f}")
 
 # --- Data Exploration ---
 st.sidebar.title("📊 Data Exploration")
