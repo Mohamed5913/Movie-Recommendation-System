@@ -37,11 +37,24 @@ if "user_names" not in st.session_state:
     st.session_state.user_names = {i: f"User {i}" for i in st.session_state.user_matrix.index}
 
 @st.cache_data
-def get_movie_posters(title):
-    url = f"http://www.omdbapi.com/?apikey={OMDB_API_KEY}&t={title}"
-    response = requests.get(url)
-    data = response.json()
-    return data.get("Poster") if data.get("Response") == "True" else None
+def get_movie_data(title):
+    if not OMDB_API_KEY:
+        st.error("OMDb API key not set. Please check your .env file.")
+        return {}
+    clean_title = title.strip()
+    url = f"http://www.omdbapi.com/?apikey={OMDB_API_KEY}&t={clean_title}"
+    try:
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("Response") == "True":
+            return data
+        else:
+            st.warning(f"OMDb API: {data.get('Error', 'No data found')}")
+            return {}
+    except Exception as e:
+        st.error(f"Error fetching data for '{title}': {e}")
+        return {}
 
 st.title("\U0001F3A5 Movie Recommendation System")
 
@@ -84,7 +97,8 @@ if search_query:
 movie_titles = filtered_movies["title"].tolist()
 selected_movie = st.selectbox("Select a Movie to Rate", movie_titles)
 if selected_movie:
-    poster_url = get_movie_posters(selected_movie)
+    movie_data = get_movie_data(selected_movie)
+    poster_url = movie_data.get("Poster")
     if poster_url:
         st.image(poster_url, width=100)
 
@@ -119,7 +133,8 @@ if st.button("Recommend"):
         st.write("### Recommended Movies:")
         for movie_id in recommendations.index:
             title = u_item[u_item["movie_id"] == movie_id]["title"].values[0]
-            poster_url = get_movie_posters(title)
+            movie_data = get_movie_data(title)
+            poster_url = movie_data.get("Poster")
             if poster_url:
                 st.image(poster_url, width=100)
             st.write(f"**{title}** - Predicted Rating: {recommendations[movie_id]:.2f}")
