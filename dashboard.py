@@ -43,7 +43,7 @@ if "user_names" not in st.session_state:
 def get_movie_data(title):
     if not OMDB_API_KEY:
         return {}
-    clean_title = re.sub(r"\s*\(\d{4}\)$", "", title.strip())
+    clean_title = re.sub(r"\\s*\\(\\d{4}\\)$", "", title.strip())
     clean_title = re.sub(r", The$", "", clean_title)
     clean_title = re.sub(r", A$", "", clean_title)
     clean_title = re.sub(r", An$", "", clean_title)
