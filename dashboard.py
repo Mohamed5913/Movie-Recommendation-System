@@ -99,21 +99,27 @@ if st.button("Recommend"):
     sim_users = [(i + 1, score) for i, score in enumerate(sim_scores) if (i + 1) != selected_user]
     sim_users = sorted(sim_users, key=lambda x: x[1], reverse=True)
 
-    sim_user_ids, sim_weights = zip(*sim_users)
-    ratings_matrix = st.session_state.user_matrix.loc[sim_user_ids]
-    weighted_ratings = ratings_matrix.T.dot(np.array(sim_weights)) / (np.sum(sim_weights) + 1e-8)
+    if sim_users:
+        sim_user_ids, sim_weights = zip(*sim_users)
+        sim_user_ids = list(sim_user_ids)
+        sim_weights = np.array(sim_weights)
 
-    seen_movies = st.session_state.user_matrix.loc[selected_user] > 0
-    recommendations = pd.Series(weighted_ratings, index=ratings_matrix.columns)
-    recommendations = recommendations[~seen_movies].sort_values(ascending=False).head(num_recs)
+        ratings_matrix = st.session_state.user_matrix.loc[sim_user_ids]
+        weighted_ratings = ratings_matrix.T.dot(sim_weights) / (np.sum(sim_weights) + 1e-8)
 
-    st.write("### Recommended Movies:")
-    for movie_id in recommendations.index:
-        title = u_item[u_item["movie_id"] == movie_id]["title"].values[0]
-        poster_url = get_movie_posters(title)
-        if poster_url:
-            st.image(poster_url, width=100)
-        st.write(f"**{title}** - Predicted Rating: {recommendations[movie_id]:.2f}")
+        seen_movies = st.session_state.user_matrix.loc[selected_user] > 0
+        recommendations = pd.Series(weighted_ratings, index=ratings_matrix.columns)
+        recommendations = recommendations[~seen_movies].sort_values(ascending=False).head(num_recs)
+
+        st.write("### Recommended Movies:")
+        for movie_id in recommendations.index:
+            title = u_item[u_item["movie_id"] == movie_id]["title"].values[0]
+            poster_url = get_movie_posters(title)
+            if poster_url:
+                st.image(poster_url, width=100)
+            st.write(f"**{title}** - Predicted Rating: {recommendations[movie_id]:.2f}")
+    else:
+        st.warning("Not enough similar users to generate recommendations.")
 
 # --- Sidebar Data Exploration ---
 st.sidebar.title("\U0001F4CA Data Exploration")
