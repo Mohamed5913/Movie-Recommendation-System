@@ -1,201 +1,135 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import requests
 import os
-from dotenv import load_dotenv
+import difflib
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.decomposition import TruncatedSVD
+from dotenv import load_dotenv
+import requests
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # Load environment variables
 load_dotenv()
 OMDB_API_KEY = os.getenv("OMDB_API_KEY")
 
-# Load MovieLens 100K data
-column_names = ['userId', 'movieId', 'rating', 'timestamp']
-data = pd.read_csv("ml-100k/u.data", sep='\t', names=column_names)
+# Load Data
+u_data = pd.read_csv("ml-100k/u.data", sep="\t", names=["user_id", "item_id", "rating", "timestamp"])
+u_item = pd.read_csv("ml-100k/u.item", sep="|", encoding="latin-1", header=None, usecols=[0, 1, 2], names=["movie_id", "title", "release_date"])
+u_user = pd.read_csv("ml-100k/u.user", sep="|", header=None, names=["user_id", "age", "gender", "occupation", "zip_code"])
+u_genre = pd.read_csv("ml-100k/u.genre", sep="|", names=["genre", "genre_id"], engine='python')
 
-item_columns = ['movieId', 'title', 'release_date', 'video_release_date', 'IMDb_URL', 'unknown', 'Action', 'Adventure',
-                'Animation', "Children's", 'Comedy', 'Crime', 'Documentary', 'Drama', 'Fantasy', 'Film-Noir', 'Horror',
-                'Musical', 'Mystery', 'Romance', 'Sci-Fi', 'Thriller', 'War', 'Western']
-movies = pd.read_csv("ml-100k/u.item", sep='|', encoding='latin-1', names=item_columns)
+# Preprocessing
+movie_genres = pd.read_csv("ml-100k/u.item", sep="|", encoding="latin-1", header=None, usecols=range(5, 24))
+genre_cols = u_genre.genre.tolist()
+u_item = u_item.join(movie_genres)
+u_item.columns = list(u_item.columns[:3]) + genre_cols
 
-# Convert release_date to datetime
-movies['release_date'] = pd.to_datetime(movies['release_date'], errors='coerce')
+user_movie_matrix = u_data.pivot(index="user_id", columns="item_id", values="rating").fillna(0)
+cosine_sim = cosine_similarity(user_movie_matrix)
 
-# Load genres and remove 'unknown'
-genre_df = pd.read_csv("ml-100k/u.genre", sep='|', names=['genre', 'genre_id'], encoding='latin-1')
-genres = genre_df['genre'].dropna().tolist()
-genres = [g for g in genres if g.lower() != 'unknown']
+# Caching for performance
+@st.cache_data
+def get_cosine_sim():
+    return cosine_similarity(user_movie_matrix)
 
-# Create user-item matrix
-user_movie_matrix = data.pivot_table(index='userId', columns='movieId', values='rating')
-user_movie_matrix.fillna(0, inplace=True)
+@st.cache_data
+def get_movie_posters(title):
+    url = f"http://www.omdbapi.com/?apikey={OMDB_API_KEY}&t={title}"
+    response = requests.get(url)
+    data = response.json()
+    return data.get("Poster") if data.get("Response") == "True" else None
 
-# Cache similarity matrices
-@st.cache_data(show_spinner=False)
-def compute_user_similarity():
-    user_similarity = cosine_similarity(user_movie_matrix)
-    return pd.DataFrame(user_similarity, index=user_movie_matrix.index, columns=user_movie_matrix.index)
+# UI
+st.title("🎥 Movie Recommendation System")
 
-@st.cache_data(show_spinner=False)
-def compute_item_similarity():
-    item_similarity = cosine_similarity(user_movie_matrix.T)
-    return pd.DataFrame(item_similarity, index=user_movie_matrix.columns, columns=user_movie_matrix.columns)
+# --- Select User ---
+user_list = user_movie_matrix.index.tolist()
+selected_user = st.selectbox("👤 Select User ID", user_list)
 
-@st.cache_data(show_spinner=False)
-def compute_svd_similarity():
-    svd = TruncatedSVD(n_components=20)
-    svd_matrix = svd.fit_transform(user_movie_matrix)
-    svd_sim = cosine_similarity(svd_matrix)
-    return pd.DataFrame(svd_sim, index=user_movie_matrix.index, columns=user_movie_matrix.index)
+# --- Rate a Movie ---
+st.subheader("🎬 Rate a Movie")
 
-def fetch_poster(imdb_url):
-    try:
-        imdb_id = imdb_url.strip().split('/')[-2]
-        api_url = f"http://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_API_KEY}"
-        response = requests.get(api_url)
-        data = response.json()
-        return data.get("Poster", "")
-    except Exception:
-        return ""
+# Filter by genre
+selected_genres = st.multiselect("Filter by Genre", genre_cols)
 
-user_similarity_df = compute_user_similarity()
-item_similarity_df = compute_item_similarity()
-svd_similarity_df = compute_svd_similarity()
+# Filter by release year (slider)
+u_item['release_year'] = pd.to_datetime(u_item['release_date'], errors='coerce').dt.year
+min_year = int(u_item['release_year'].min())
+max_year = int(u_item['release_year'].max())
+year_range = st.slider("Select Release Year Range", min_year, max_year, (min_year, max_year))
 
-def get_top_n_recommendations(user_id, similarity_df, n=5, genre_filter=None, release_filter=None):
-    sim_users = similarity_df[user_id].sort_values(ascending=False)[1:]
-    user_ratings = user_movie_matrix.loc[user_id]
-    weighted_ratings = pd.Series(dtype=float)
-    for other_user, sim_score in sim_users.items():
-        other_ratings = user_movie_matrix.loc[other_user]
-        for movie_id, rating in other_ratings.items():
-            if user_ratings[movie_id] == 0:
-                if movie_id not in weighted_ratings:
-                    weighted_ratings[movie_id] = 0
-                weighted_ratings[movie_id] += rating * sim_score
-    recommendations = weighted_ratings.sort_values(ascending=False)
-    movie_info = movies[movies['movieId'].isin(recommendations.index)][['movieId', 'title', 'IMDb_URL', 'release_date']].copy()
+# Search movie
+search_query = st.text_input("Search for a Movie")
+filtered_movies = u_item.copy()
 
-    if genre_filter:
-        genre_cols = [g for g in genre_filter if g in movies.columns]
-        genre_mask = movies.set_index('movieId').loc[movie_info['movieId']][genre_cols].sum(axis=1) > 0
-        movie_info = movie_info[genre_mask.values]
-
-    if release_filter:
-        start_date, end_date = release_filter
-        movie_info = movie_info[(movie_info['release_date'] >= start_date) & (movie_info['release_date'] <= end_date)]
-
-    return movie_info.head(n)
-
-# Streamlit UI
-st.title("🎬 Movie Recommendation System")
-
-model = st.selectbox("Select Recommendation Model:", ["User-Based CF", "Item-Based CF", "SVD-Based CF"])
-
-# Limit default users to 5 and allow dynamic addition
-default_users = user_movie_matrix.index[:5].tolist()
-default_user_names = {uid: f"User {uid}" for uid in default_users}
-
-if 'custom_users' not in st.session_state:
-    st.session_state.custom_users = {}
-
-custom_user_ids = list(st.session_state.custom_users.keys())
-custom_user_names = {uid: name for uid, name in st.session_state.custom_users.items()}
-
-all_users = default_users + custom_user_ids
-all_user_names = {**default_user_names, **custom_user_names}
-
-selected_user_id = st.selectbox("Select User Account:", options=all_users, format_func=lambda x: all_user_names[x])
-user_id = selected_user_id
-
-# Add New User Section
-st.markdown("---")
-st.header("➕ Add New User")
-new_user_name = st.text_input("Enter new user name:")
-
-if st.button("Add User"):
-    if new_user_name.strip():
-        new_id = user_movie_matrix.index.max() + 1
-        new_row = pd.Series(0, index=user_movie_matrix.columns)
-        user_movie_matrix.loc[new_id] = new_row
-        st.session_state.custom_users[new_id] = new_user_name.strip()
-        st.success(f"New user '{new_user_name}' added with ID {new_id}")
-        st.rerun()
-    else:
-        st.warning("Please enter a valid user name.")
-
-# Add Rating Section for new user
-st.markdown("---")
-st.header("⭐ Rate a Movie")
-selected_genres = st.multiselect("Filter movies by genre:", genres, key="rate_genre")
-filtered_movies = movies.copy()
 if selected_genres:
-    genre_cols = [g for g in selected_genres if g in movies.columns]
-    filtered_movies = filtered_movies[filtered_movies[genre_cols].sum(axis=1) > 0]
+    for genre in selected_genres:
+        filtered_movies = filtered_movies[filtered_movies[genre] == 1]
 
-search_text = st.text_input("Search for a movie by title:", key="rate_search")
-matched_movies = filtered_movies[filtered_movies['title'].str.contains(search_text, case=False, na=False)] if search_text else filtered_movies
-selected_movie = st.selectbox("Select a movie to rate:", matched_movies['title'].sort_values().tolist(), key="rate_movie")
-rating = st.slider("Your Rating:", 1, 5, 3, key="rate_slider")
+filtered_movies = filtered_movies[filtered_movies['release_year'].between(year_range[0], year_range[1])]
+
+if search_query:
+    filtered_movies = filtered_movies[filtered_movies["title"].str.contains(search_query, case=False, na=False)]
+
+movie_titles = filtered_movies["title"].tolist()
+selected_movie = st.selectbox("Select a Movie to Rate", movie_titles)
+rating = st.slider("Your Rating", 1, 5, 3)
 
 if st.button("Give Rating"):
-    if selected_movie:
-        movie_id = filtered_movies[filtered_movies['title'] == selected_movie]['movieId'].values[0]
-        user_movie_matrix.at[user_id, movie_id] = rating
-        st.success(f"Rating of {rating} given to '{selected_movie}'")
-        st.rerun()
+    movie_id = u_item[u_item["title"] == selected_movie]["movie_id"].values[0]
+    user_movie_matrix.loc[selected_user, movie_id] = rating
+    st.success(f"You rated '{selected_movie}' a {rating}/5")
 
-# Movie Recommendation Section
-st.markdown("---")
-st.header("🎯 Get Movie Recommendations")
-genre_filter = st.multiselect("Select preferred genres (optional):", genres)
-release_start = st.date_input("Start Release Date (optional):", value=pd.to_datetime("1990-01-01"))
-release_end = st.date_input("End Release Date (optional):", value=pd.to_datetime("2000-12-31"))
-release_filter = (release_start, release_end) if release_start and release_end else None
-top_n = st.slider("Number of Recommendations:", 1, 20, 5)
+# --- Add New User ---
+st.subheader("➕ Add New User")
+new_user_name = st.text_input("Enter New User Name")
 
-if st.button("Get Recommendations"):
-    if model == "User-Based CF":
-        recs = get_top_n_recommendations(user_id, user_similarity_df, n=top_n, genre_filter=genre_filter, release_filter=release_filter)
-    elif model == "Item-Based CF":
-        recs = get_top_n_recommendations(user_id, item_similarity_df, n=top_n, genre_filter=genre_filter, release_filter=release_filter)
+if st.button("Add User"):
+    if new_user_name:
+        new_user_id = user_movie_matrix.index.max() + 1
+        user_movie_matrix.loc[new_user_id] = 0
+        st.success(f"User '{new_user_name}' added successfully!")
     else:
-        recs = get_top_n_recommendations(user_id, svd_similarity_df, n=top_n, genre_filter=genre_filter, release_filter=release_filter)
+        st.warning("Please enter a user name")
 
-    st.write(f"Top {top_n} recommendations for {all_user_names[user_id]}:")
+# --- Get Recommendations ---
+st.subheader("🎯 Get Movie Recommendations")
+num_recs = st.slider("Number of Recommendations", 5, 20, 10)
 
-    for _, row in recs.iterrows():
-        poster_url = fetch_poster(row['IMDb_URL'])
-        cols = st.columns([1, 4])
-        with cols[0]:
-            if poster_url:
-                st.image(poster_url, use_column_width=True)
-        with cols[1]:
-            st.markdown(f"**{row['title']}**")
-            st.markdown(f"[🎬 IMDb Page]({row['IMDb_URL']})")
-        st.markdown("---")
+if st.button("Recommend"):
+    cosine_sim = get_cosine_sim()
+    sim_scores = list(enumerate(cosine_sim[selected_user - 1]))
+    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+    sim_users = [i[0] + 1 for i in sim_scores[1:]]
 
-    # Genre distribution visualization
-    genre_data = movies.set_index('movieId').loc[recs['movieId']][genres]
-    genre_counts = genre_data.sum().sort_values(ascending=False)
-    st.subheader("🎨 Genre Distribution of Recommendations")
+    user_ratings = user_movie_matrix.loc[sim_users].mean().sort_values(ascending=False)
+    seen_movies = user_movie_matrix.loc[selected_user]
+    unseen_movies = user_ratings[seen_movies == 0].head(num_recs)
+
+    st.write("### Recommended Movies:")
+    for movie_id in unseen_movies.index:
+        title = u_item[u_item["movie_id"] == movie_id]["title"].values[0]
+        poster_url = get_movie_posters(title)
+        if poster_url:
+            st.image(poster_url, width=100)
+        st.write(f"**{title}** - Predicted Rating: {unseen_movies[movie_id]:.2f}")
+
+# --- Data Exploration ---
+st.sidebar.title("📊 Data Exploration")
+if st.sidebar.checkbox("Show raw data"):
+    st.write("### Raw Ratings Data", u_data.head())
+    st.write("### Raw Movie Data", u_item.head())
+    st.write("### Raw User Data", u_user.head())
+
+# Ratings distribution
+if st.sidebar.checkbox("Show ratings distribution"):
     fig, ax = plt.subplots()
-    genre_counts.plot(kind='bar', ax=ax)
+    sns.countplot(x="rating", data=u_data, ax=ax)
     st.pyplot(fig)
 
-    # Top-rated genres by user
-    st.subheader("📊 Top-Rated Genres by This User")
-    user_ratings = data[data['userId'] == user_id]
-    rated_movies = movies[movies['movieId'].isin(user_ratings['movieId'])]
-    genre_totals = rated_movies[genres].sum()
-    genre_avg_ratings = rated_movies[genres].multiply(user_ratings.set_index('movieId')['rating'], axis=0).sum() / genre_totals
-    genre_avg_ratings = genre_avg_ratings.dropna().sort_values(ascending=False)
-    fig2, ax2 = plt.subplots()
-    genre_avg_ratings.plot(kind='bar', ax=ax2, color='orange')
-    st.pyplot(fig2)
-
-st.sidebar.title("🎭 Genres Available")
-st.sidebar.write(", ".join(genres))
+# Top rated movies
+if st.sidebar.checkbox("Top Rated Movies"):
+    top_movies = u_data.groupby("item_id")["rating"].mean().sort_values(ascending=False).head(10)
+    top_titles = u_item[u_item["movie_id"].isin(top_movies.index)]["title"]
+    st.write(pd.DataFrame({"Title": top_titles.values, "Avg Rating": top_movies.values}))
