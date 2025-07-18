@@ -104,10 +104,9 @@ all_user_names = {**default_user_names, **custom_user_names}
 selected_user_id = st.selectbox("Select User Account:", options=all_users, format_func=lambda x: all_user_names[x])
 user_id = selected_user_id
 
-# Option to add new user
+# Add New User Section
 st.markdown("---")
-st.subheader("➕ Add New User")
-
+st.header("➕ Add New User")
 new_user_name = st.text_input("Enter new user name:")
 selected_genres = st.multiselect("Filter movies by genre:", genres)
 filtered_movies = movies.copy()
@@ -115,14 +114,16 @@ if selected_genres:
     genre_cols = [g for g in selected_genres if g in movies.columns]
     filtered_movies = filtered_movies[filtered_movies[genre_cols].sum(axis=1) > 0]
 
-search_movie = st.selectbox("Search and rate a movie:", filtered_movies['title'].sort_values().tolist())
+search_text = st.text_input("Search for a movie by title:")
+matched_movies = filtered_movies[filtered_movies['title'].str.contains(search_text, case=False, na=False)] if search_text else filtered_movies
+selected_movie = st.selectbox("Select a movie to rate:", matched_movies['title'].sort_values().tolist())
 rating = st.slider("Your Rating:", 1, 5, 3)
 
 if st.button("Add User"):
     if new_user_name.strip():
         new_id = user_movie_matrix.index.max() + 1
         new_row = pd.Series(0, index=user_movie_matrix.columns)
-        movie_id = filtered_movies[filtered_movies['title'] == search_movie]['movieId'].values[0]
+        movie_id = filtered_movies[filtered_movies['title'] == selected_movie]['movieId'].values[0]
         new_row[movie_id] = rating
         user_movie_matrix.loc[new_id] = new_row
         st.session_state.custom_users[new_id] = new_user_name.strip()
@@ -131,6 +132,9 @@ if st.button("Add User"):
     else:
         st.warning("Please enter a valid user name.")
 
+# Movie Recommendation Section
+st.markdown("---")
+st.header("🎯 Get Movie Recommendations")
 genre_filter = st.multiselect("Select preferred genres (optional):", genres)
 top_n = st.slider("Number of Recommendations:", 1, 20, 5)
 
