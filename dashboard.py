@@ -40,20 +40,26 @@ if "user_names" not in st.session_state:
     st.session_state.user_names = {i: f"User {i}" for i in st.session_state.user_matrix.index}
 
 @st.cache_data
+@st.cache_data
 def get_movie_data(title):
     if not OMDB_API_KEY:
         return {}
-    clean_title = re.sub(r"\\s*\\(\\d{4}\\)$", "", title.strip())
+    
+    # Fix: Use proper regex for cleaning movie title
+    clean_title = re.sub(r"\s*\(\d{4}\)$", "", title.strip())
     clean_title = re.sub(r", The$", "", clean_title)
     clean_title = re.sub(r", A$", "", clean_title)
     clean_title = re.sub(r", An$", "", clean_title)
+
     if title.endswith(", The"):
         clean_title = "The " + clean_title
     elif title.endswith(", A"):
         clean_title = "A " + clean_title
     elif title.endswith(", An"):
         clean_title = "An " + clean_title
+
     url = f"http://www.omdbapi.com/?apikey={OMDB_API_KEY}&t={clean_title}"
+    
     try:
         response = requests.get(url, timeout=5)
         response.raise_for_status()
@@ -62,6 +68,7 @@ def get_movie_data(title):
     except Exception as e:
         print(f"OMDb API error: {e}")
         return {}
+
 
 st.title("\U0001F3A5 Movie Recommendation System")
 
