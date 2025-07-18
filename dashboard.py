@@ -109,6 +109,17 @@ st.markdown("---")
 st.header("➕ Add New User")
 new_user_name = st.text_input("Enter new user name:")
 
+if st.button("Add User"):
+    if new_user_name.strip():
+        new_id = user_movie_matrix.index.max() + 1
+        new_row = pd.Series(0, index=user_movie_matrix.columns)
+        user_movie_matrix.loc[new_id] = new_row
+        st.session_state.custom_users[new_id] = new_user_name.strip()
+        st.success(f"New user '{new_user_name}' added with ID {new_id}")
+        st.rerun()
+    else:
+        st.warning("Please enter a valid user name.")
+
 # Add Rating Section for new user
 st.markdown("---")
 st.header("⭐ Rate a Movie")
@@ -123,18 +134,12 @@ matched_movies = filtered_movies[filtered_movies['title'].str.contains(search_te
 selected_movie = st.selectbox("Select a movie to rate:", matched_movies['title'].sort_values().tolist(), key="rate_movie")
 rating = st.slider("Your Rating:", 1, 5, 3, key="rate_slider")
 
-if st.button("Add User"):
-    if new_user_name.strip():
-        new_id = user_movie_matrix.index.max() + 1
-        new_row = pd.Series(0, index=user_movie_matrix.columns)
+if st.button("Give Rating"):
+    if selected_movie:
         movie_id = filtered_movies[filtered_movies['title'] == selected_movie]['movieId'].values[0]
-        new_row[movie_id] = rating
-        user_movie_matrix.loc[new_id] = new_row
-        st.session_state.custom_users[new_id] = new_user_name.strip()
-        st.success(f"New user '{new_user_name}' added with ID {new_id}")
+        user_movie_matrix.at[user_id, movie_id] = rating
+        st.success(f"Rating of {rating} given to '{selected_movie}'")
         st.rerun()
-    else:
-        st.warning("Please enter a valid user name.")
 
 # Movie Recommendation Section
 st.markdown("---")
