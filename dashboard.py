@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import requests
 import matplotlib.pyplot as plt
 import seaborn as sns
+import re
 
 # Load environment variables
 load_dotenv()
@@ -42,7 +43,7 @@ if "user_names" not in st.session_state:
 def get_movie_data(title):
     if not OMDB_API_KEY:
         return {}
-    clean_title = title.strip()
+    clean_title = re.sub(r"\s*\(\d{4}\)$", "", title.strip())
     url = f"http://www.omdbapi.com/?apikey={OMDB_API_KEY}&t={clean_title}"
     try:
         response = requests.get(url, timeout=5)
@@ -98,7 +99,7 @@ selected_movie = st.selectbox("Select a Movie to Rate", movie_titles)
 if selected_movie:
     movie_data = get_movie_data(selected_movie)
     poster_url = movie_data.get("Poster")
-    if poster_url:
+    if poster_url and poster_url != "N/A":
         st.image(poster_url, width=100)
 
 rating = st.slider("Your Rating", 1, 5, 3)
@@ -114,35 +115,37 @@ if st.button("Recommend"):
     seen_movies = st.session_state.user_matrix.loc[selected_user] > 0
 
     if seen_movies.any():
-        cosine_sim = cosine_similarity(st.session_state.user_matrix)
-        sim_scores = cosine_sim[selected_user - 1]
-
-        sim_users = [(i + 1, score) for i, score in enumerate(sim_scores) if (i + 1) != selected_user]
-        sim_users = sorted(sim_users, key=lambda x: x[1], reverse=True)
-
-        if sim_users:
-            sim_user_ids, sim_weights = zip(*sim_users)
-            sim_user_ids = list(sim_user_ids)
-            sim_weights = np.array(sim_weights)
-
-            ratings_matrix = st.session_state.user_matrix.loc[sim_user_ids]
-            weighted_ratings = ratings_matrix.T.dot(sim_weights) / (np.sum(sim_weights) + 1e-8)
-
-            recommendations = pd.Series(weighted_ratings, index=ratings_matrix.columns)
-            recommendations = recommendations[~seen_movies].sort_values(ascending=False).head(num_recs)
-
-            st.write("### Recommended Movies:")
-            for movie_id in recommendations.index:
-                title = u_item[u_item["movie_id"] == movie_id]["title"].values[0]
-                movie_data = get_movie_data(title)
-                poster_url = movie_data.get("Poster")
-                if poster_url:
-                    st.image(poster_url, width=100)
-                st.write(f"**{title}** - Predicted Rating: {recommendations[movie_id]:.2f}")
+        user_matrix_nonzero = st.session_state.user_matrix[(st.session_state.user_matrix > 0).any(axis=1)]
+        if len(user_matrix_nonzero) < 2:
+            st.warning("Not enough user ratings for recommendations.")
         else:
-            st.warning("Not enough similar users to generate recommendations.")
+            cosine_sim = cosine_similarity(user_matrix_nonzero)
+            user_index = list(user_matrix_nonzero.index).index(selected_user)
+            sim_scores = cosine_sim[user_index]
+
+            sim_users = [(uid, sim_scores[i]) for i, uid in enumerate(user_matrix_nonzero.index) if uid != selected_user]
+            sim_users = sorted(sim_users, key=lambda x: x[1], reverse=True)
+
+            if sim_users:
+                sim_user_ids, sim_weights = zip(*sim_users)
+                ratings_matrix = user_matrix_nonzero.loc[list(sim_user_ids)]
+                sim_weights = np.array(sim_weights)
+                weighted_ratings = ratings_matrix.T.dot(sim_weights) / (np.sum(sim_weights) + 1e-8)
+
+                recommendations = pd.Series(weighted_ratings, index=ratings_matrix.columns)
+                recommendations = recommendations[~seen_movies].sort_values(ascending=False).head(num_recs)
+
+                st.write("### Recommended Movies:")
+                for movie_id in recommendations.index:
+                    title = u_item[u_item["movie_id"] == movie_id]["title"].values[0]
+                    movie_data = get_movie_data(title)
+                    poster_url = movie_data.get("Poster")
+                    if poster_url and poster_url != "N/A":
+                        st.image(poster_url, width=100)
+                    st.write(f"**{title}** - Predicted Rating: {recommendations[movie_id]:.2f}")
+            else:
+                st.warning("No similar users with enough data.")
     else:
-        # General top-rated movies if no history
         top_movies = u_data.groupby("item_id")["rating"].mean().sort_values(ascending=False)
         top_unseen = top_movies[~seen_movies].head(num_recs)
 
@@ -151,7 +154,7 @@ if st.button("Recommend"):
             title = u_item[u_item["movie_id"] == movie_id]["title"].values[0]
             movie_data = get_movie_data(title)
             poster_url = movie_data.get("Poster")
-            if poster_url:
+            if poster_url and poster_url != "N/A":
                 st.image(poster_url, width=100)
             st.write(f"**{title}** - Avg Rating: {top_unseen[movie_id]:.2f}")
 
