@@ -43,7 +43,7 @@ if "user_names" not in st.session_state:
 def get_movie_data(title):
     if not OMDB_API_KEY:
         return {}
-    clean_title = re.sub(r"\\s*\\(\\d{4}\\)$", "", title.strip())
+    clean_title = re.sub(r"\s*\(\d{4}\)$", "", title.strip())
     clean_title = re.sub(r", The$", "", clean_title)
     clean_title = re.sub(r", A$", "", clean_title)
     clean_title = re.sub(r", An$", "", clean_title)
@@ -59,7 +59,8 @@ def get_movie_data(title):
         response.raise_for_status()
         data = response.json()
         return data if data.get("Response") == "True" else {}
-    except Exception:
+    except Exception as e:
+        print(f"OMDb API error: {e}")
         return {}
 
 st.title("\U0001F3A5 Movie Recommendation System")
@@ -156,9 +157,10 @@ if st.button("Recommend"):
                 title = u_item[u_item["movie_id"] == movie_id]["title"].values[0]
                 movie_data = get_movie_data(title)
                 poster_url = movie_data.get("Poster")
+                imdb_rating = movie_data.get("imdbRating", "N/A")
                 if poster_url and poster_url != "N/A":
                     st.image(poster_url, width=100)
-                st.write(f"**{title}** - Predicted Rating: {recommendations[movie_id]:.2f}")
+                st.write(f"**{title}** - IMDb Rating: {imdb_rating}")
         else:
             st.warning("No similar users with enough data.")
 
