@@ -44,6 +44,12 @@ def get_movie_data(title):
     if not OMDB_API_KEY:
         return {}
     clean_title = re.sub(r"\s*\(\d{4}\)$", "", title.strip())
+    if ", The" in clean_title:
+        clean_title = "The " + clean_title.replace(", The", "")
+    elif ", A" in clean_title:
+        clean_title = "A " + clean_title.replace(", A", "")
+    elif ", An" in clean_title:
+        clean_title = "An " + clean_title.replace(", An", "")
     url = f"http://www.omdbapi.com/?apikey={OMDB_API_KEY}&t={clean_title}"
     try:
         response = requests.get(url, timeout=5)
@@ -130,7 +136,18 @@ if st.button("Recommend"):
                 sim_user_ids, sim_weights = zip(*sim_users)
                 ratings_matrix = user_matrix_nonzero.loc[list(sim_user_ids)]
                 sim_weights = np.array(sim_weights)
-                weighted_ratings = ratings_matrix.T.dot(sim_weights) / (np.sum(sim_weights) + 1e-8)
+
+                weighted_ratings = []
+                for movie_id in ratings_matrix.columns:
+                    ratings = ratings_matrix[movie_id]
+                    mask = ratings > 0
+                    if mask.sum() == 0:
+                        weighted_ratings.append(0.0)
+                    else:
+                        r = ratings[mask]
+                        w = sim_weights[mask]
+                        score = np.dot(r, w) / (np.sum(w) + 1e-8)
+                        weighted_ratings.append(score)
 
                 recommendations = pd.Series(weighted_ratings, index=ratings_matrix.columns)
                 recommendations = recommendations[~seen_movies].sort_values(ascending=False).head(num_recs)
