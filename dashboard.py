@@ -108,16 +108,19 @@ user_id = selected_user_id
 st.markdown("---")
 st.header("➕ Add New User")
 new_user_name = st.text_input("Enter new user name:")
-selected_genres = st.multiselect("Filter movies by genre:", genres)
-filtered_movies = movies.copy()
-if selected_genres:
-    genre_cols = [g for g in selected_genres if g in movies.columns]
-    filtered_movies = filtered_movies[filtered_movies[genre_cols].sum(axis=1) > 0]
 
-search_text = st.text_input("Search for a movie by title:")
-matched_movies = filtered_movies[filtered_movies['title'].str.contains(search_text, case=False, na=False)] if search_text else filtered_movies
-selected_movie = st.selectbox("Select a movie to rate:", matched_movies['title'].sort_values().tolist())
-rating = st.slider("Your Rating:", 1, 5, 3)
+if new_user_name.strip():
+    st.subheader("🎬 Rate a Movie")
+    selected_genres = st.multiselect("Filter movies by genre:", genres, key="rate_genre")
+    filtered_movies = movies.copy()
+    if selected_genres:
+        genre_cols = [g for g in selected_genres if g in movies.columns]
+        filtered_movies = filtered_movies[filtered_movies[genre_cols].sum(axis=1) > 0]
+
+    search_text = st.text_input("Search for a movie by title:", key="rate_search")
+    matched_movies = filtered_movies[filtered_movies['title'].str.contains(search_text, case=False, na=False)] if search_text else filtered_movies
+    selected_movie = st.selectbox("Select a movie to rate:", matched_movies['title'].sort_values().tolist(), key="rate_movie")
+    rating = st.slider("Your Rating:", 1, 5, 3, key="rate_slider")
 
 if st.button("Add User"):
     if new_user_name.strip():
