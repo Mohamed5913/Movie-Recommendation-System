@@ -12,6 +12,8 @@ import seaborn as sns
 # Load environment variables
 load_dotenv()
 OMDB_API_KEY = os.getenv("OMDB_API_KEY")
+if not OMDB_API_KEY:
+    st.error("OMDb API key not set. Please ensure .env file exists and contains a valid OMDB_API_KEY.")
 
 # Load Data
 u_data = pd.read_csv("ml-100k/u.data", sep="\t", names=["user_id", "item_id", "rating", "timestamp"])
@@ -39,7 +41,6 @@ if "user_names" not in st.session_state:
 @st.cache_data
 def get_movie_data(title):
     if not OMDB_API_KEY:
-        st.error("OMDb API key not set. Please check your .env file.")
         return {}
     clean_title = title.strip()
     url = f"http://www.omdbapi.com/?apikey={OMDB_API_KEY}&t={clean_title}"
@@ -50,10 +51,8 @@ def get_movie_data(title):
         if data.get("Response") == "True":
             return data
         else:
-            st.warning(f"OMDb API: {data.get('Error', 'No data found')}")
             return {}
-    except Exception as e:
-        st.error(f"Error fetching data for '{title}': {e}")
+    except Exception:
         return {}
 
 st.title("\U0001F3A5 Movie Recommendation System")
