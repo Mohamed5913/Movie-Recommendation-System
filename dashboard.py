@@ -143,8 +143,8 @@ if st.button("Recommend"):
                 if mask.sum() == 0:
                     weighted_ratings.append(0.0)
                 else:
-                    r = ratings[mask]
-                    w = sim_weights[mask.index[mask]]
+                    r = ratings[mask].values
+                    w = sim_weights[np.where(mask.values)[0]]
                     score = np.dot(r, w) / (np.sum(w) + 1e-8)
                     weighted_ratings.append(score)
 
