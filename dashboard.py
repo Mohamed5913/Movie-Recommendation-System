@@ -40,12 +40,10 @@ if "user_names" not in st.session_state:
     st.session_state.user_names = {i: f"User {i}" for i in st.session_state.user_matrix.index}
 
 @st.cache_data
-@st.cache_data
 def get_movie_data(title):
     if not OMDB_API_KEY:
         return {}
-    
-    # Fix: Use proper regex for cleaning movie title
+
     clean_title = re.sub(r"\s*\(\d{4}\)$", "", title.strip())
     clean_title = re.sub(r", The$", "", clean_title)
     clean_title = re.sub(r", A$", "", clean_title)
@@ -59,7 +57,6 @@ def get_movie_data(title):
         clean_title = "An " + clean_title
 
     url = f"http://www.omdbapi.com/?apikey={OMDB_API_KEY}&t={clean_title}"
-    
     try:
         response = requests.get(url, timeout=5)
         response.raise_for_status()
@@ -68,7 +65,6 @@ def get_movie_data(title):
     except Exception as e:
         print(f"OMDb API error: {e}")
         return {}
-
 
 st.title("\U0001F3A5 Movie Recommendation System")
 
@@ -165,9 +161,11 @@ if st.button("Recommend"):
                 movie_data = get_movie_data(title)
                 poster_url = movie_data.get("Poster")
                 imdb_rating = movie_data.get("imdbRating", "N/A")
+                plot = movie_data.get("Plot", "Description not available.")
                 if poster_url and poster_url != "N/A":
                     st.image(poster_url, width=100)
                 st.write(f"**{title}** - IMDb Rating: {imdb_rating}")
+                st.caption(plot)
         else:
             st.warning("No similar users with enough data.")
 
