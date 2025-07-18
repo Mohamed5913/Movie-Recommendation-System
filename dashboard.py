@@ -88,32 +88,48 @@ st.title("🎬 Movie Recommendation System")
 
 model = st.selectbox("Select Recommendation Model:", ["User-Based CF", "Item-Based CF", "SVD-Based CF"])
 
-# Replace User ID input with dropdown of synthetic user names
-user_names = {uid: f"User {uid}" for uid in user_movie_matrix.index}
-selected_user_id = st.selectbox("Select User Account:", options=list(user_names.keys()), format_func=lambda x: user_names[x])
+# Limit default users to 5 and allow dynamic addition
+default_users = user_movie_matrix.index[:5].tolist()
+default_user_names = {uid: f"User {uid}" for uid in default_users}
+
+if 'custom_users' not in st.session_state:
+    st.session_state.custom_users = {}
+
+custom_user_ids = list(st.session_state.custom_users.keys())
+custom_user_names = {uid: name for uid, name in st.session_state.custom_users.items()}
+
+all_users = default_users + custom_user_ids
+all_user_names = {**default_user_names, **custom_user_names}
+
+selected_user_id = st.selectbox("Select User Account:", options=all_users, format_func=lambda x: all_user_names[x])
 user_id = selected_user_id
 
 # Option to add new user
 st.markdown("---")
 st.subheader("➕ Add New User")
 
-if 'new_user_counter' not in st.session_state:
-    st.session_state.new_user_counter = 1
+new_user_name = st.text_input("Enter new user name:")
+selected_genres = st.multiselect("Filter movies by genre:", genres)
+filtered_movies = movies.copy()
+if selected_genres:
+    genre_cols = [g for g in selected_genres if g in movies.columns]
+    filtered_movies = filtered_movies[filtered_movies[genre_cols].sum(axis=1) > 0]
 
-new_user_ratings = {}
-for movie in movies.sample(3)['title']:
-    rating = st.slider(f"Rate: {movie}", 1, 5, 3, key=movie)
-    mid = movies[movies['title'] == movie]['movieId'].values[0]
-    new_user_ratings[mid] = rating
+search_movie = st.selectbox("Search and rate a movie:", filtered_movies['title'].sort_values().tolist())
+rating = st.slider("Your Rating:", 1, 5, 3)
 
 if st.button("Add User"):
-    new_id = user_movie_matrix.index.max() + 1
-    new_row = pd.Series(0, index=user_movie_matrix.columns)
-    for mid, r in new_user_ratings.items():
-        new_row[mid] = r
-    user_movie_matrix.loc[new_id] = new_row
-    st.success(f"New user added as User {new_id}")
-    st.rerun()
+    if new_user_name.strip():
+        new_id = user_movie_matrix.index.max() + 1
+        new_row = pd.Series(0, index=user_movie_matrix.columns)
+        movie_id = filtered_movies[filtered_movies['title'] == search_movie]['movieId'].values[0]
+        new_row[movie_id] = rating
+        user_movie_matrix.loc[new_id] = new_row
+        st.session_state.custom_users[new_id] = new_user_name.strip()
+        st.success(f"New user '{new_user_name}' added with ID {new_id}")
+        st.rerun()
+    else:
+        st.warning("Please enter a valid user name.")
 
 genre_filter = st.multiselect("Select preferred genres (optional):", genres)
 top_n = st.slider("Number of Recommendations:", 1, 20, 5)
@@ -126,7 +142,7 @@ if st.button("Get Recommendations"):
     else:
         recs = get_top_n_recommendations(user_id, svd_similarity_df, n=top_n, genre_filter=genre_filter)
 
-    st.write(f"Top {top_n} recommendations for {user_names[user_id]}:")
+    st.write(f"Top {top_n} recommendations for {all_user_names[user_id]}:")
 
     for _, row in recs.iterrows():
         poster_url = fetch_poster(row['IMDb_URL'])
